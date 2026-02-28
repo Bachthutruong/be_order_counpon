@@ -33,15 +33,18 @@ export const createMyCoupon = async (req: AuthRequest, res: Response) => {
     const config = await Config.findOne() || {
       minDiscountPercent: 10, maxDiscountPercent: 50,
       minDiscountFixed: 20000, maxDiscountFixed: 501100,
+      applyRules: true
     };
 
-    if (discountType === 'percent') {
-      if (discountValue < config.minDiscountPercent || discountValue > config.maxDiscountPercent) {
-        return res.status(400).json({ message: `Giảm giá % phải từ ${config.minDiscountPercent}% đến ${config.maxDiscountPercent}%` });
-      }
-    } else {
-      if (discountValue < config.minDiscountFixed || discountValue > config.maxDiscountFixed) {
-        return res.status(400).json({ message: `Giảm giá VNĐ phải từ ${config.minDiscountFixed} đến ${config.maxDiscountFixed}` });
+    if (config.applyRules) {
+      if (discountType === 'percent') {
+        if (discountValue < config.minDiscountPercent || discountValue > config.maxDiscountPercent) {
+          return res.status(400).json({ message: `Giảm giá % phải từ ${config.minDiscountPercent}% đến ${config.maxDiscountPercent}%` });
+        }
+      } else {
+        if (discountValue < config.minDiscountFixed || discountValue > config.maxDiscountFixed) {
+          return res.status(400).json({ message: `Giảm giá VNĐ phải từ ${config.minDiscountFixed} đến ${config.maxDiscountFixed}` });
+        }
       }
     }
 
@@ -64,6 +67,63 @@ export const createMyCoupon = async (req: AuthRequest, res: Response) => {
     });
     
     res.status(201).json(coupon);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const updateMyCoupon = async (req: AuthRequest, res: Response) => {
+  try {
+    const { discountType, discountValue } = req.body;
+    const coupon = await Coupon.findOne({ _id: req.params.id, agentId: req.user?._id });
+    if (!coupon) return res.status(404).json({ message: 'Coupon not found' });
+
+    // Validate rules
+    const config = await Config.findOne() || { applyRules: true, minDiscountPercent: 10, maxDiscountPercent: 50, minDiscountFixed: 20000, maxDiscountFixed: 500000 };
+    if (config.applyRules) {
+        if (discountType === 'percent') {
+          if (discountValue < config.minDiscountPercent || discountValue > config.maxDiscountPercent) {
+            return res.status(400).json({ message: `Giảm giá % phải từ ${config.minDiscountPercent}% đến ${config.maxDiscountPercent}%` });
+          }
+        } else {
+          if (discountValue < config.minDiscountFixed || discountValue > config.maxDiscountFixed) {
+            return res.status(400).json({ message: `Giảm giá VNĐ phải từ ${config.minDiscountFixed} đến ${config.maxDiscountFixed}` });
+          }
+        }
+    }
+
+    if (coupon.wcCouponId) {
+      await wcService.updateCoupon(coupon.wcCouponId, {
+        discount_type: discountType,
+        amount: discountValue.toString()
+      });
+    }
+
+    coupon.discountType = discountType;
+    coupon.discountValue = discountValue;
+    await coupon.save();
+
+    res.json(coupon);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const deleteMyCoupon = async (req: AuthRequest, res: Response) => {
+  try {
+    const coupon = await Coupon.findOne({ _id: req.params.id, agentId: req.user?._id });
+    if (!coupon) return res.status(404).json({ message: 'Not found' });
+
+    if (coupon.wcCouponId) {
+       try {
+         await wcService.deleteCoupon(coupon.wcCouponId);
+       } catch (e) {
+         console.log('WP Coupon delete failed', e);
+       }
+    }
+    
+    await coupon.deleteOne();
+    res.json({ message: 'Deleted' });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }

@@ -36,8 +36,8 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         // Set cookie
         res.cookie('token', token, {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
+            secure: true, // Required for sameSite: 'none'
+            sameSite: 'none',
             maxAge: 30 * 24 * 60 * 60 * 1000,
         });
         res.json({
@@ -90,6 +90,8 @@ exports.getMe = getMe;
 const logout = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     res.cookie('token', '', {
         httpOnly: true,
+        secure: true,
+        sameSite: 'none',
         expires: new Date(0),
     });
     res.json({ message: 'Logged out' });

@@ -45,7 +45,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getMyStats = exports.getMyOrders = exports.createMyCoupon = exports.getMyCoupons = void 0;
+exports.getMyStats = exports.getMyOrders = exports.deleteMyCoupon = exports.updateMyCoupon = exports.createMyCoupon = exports.getMyCoupons = void 0;
 const Coupon_1 = __importDefault(require("../models/Coupon"));
 const Config_1 = __importDefault(require("../models/Config"));
 const Order_1 = __importDefault(require("../models/Order"));
@@ -78,15 +78,18 @@ const createMyCoupon = (req, res) => __awaiter(void 0, void 0, void 0, function*
         const config = (yield Config_1.default.findOne()) || {
             minDiscountPercent: 10, maxDiscountPercent: 50,
             minDiscountFixed: 20000, maxDiscountFixed: 501100,
+            applyRules: true
         };
-        if (discountType === 'percent') {
-            if (discountValue < config.minDiscountPercent || discountValue > config.maxDiscountPercent) {
-                return res.status(400).json({ message: `Giảm giá % phải từ ${config.minDiscountPercent}% đến ${config.maxDiscountPercent}%` });
+        if (config.applyRules) {
+            if (discountType === 'percent') {
+                if (discountValue < config.minDiscountPercent || discountValue > config.maxDiscountPercent) {
+                    return res.status(400).json({ message: `Giảm giá % phải từ ${config.minDiscountPercent}% đến ${config.maxDiscountPercent}%` });
+                }
             }
-        }
-        else {
-            if (discountValue < config.minDiscountFixed || discountValue > config.maxDiscountFixed) {
-                return res.status(400).json({ message: `Giảm giá VNĐ phải từ ${config.minDiscountFixed} đến ${config.maxDiscountFixed}` });
+            else {
+                if (discountValue < config.minDiscountFixed || discountValue > config.maxDiscountFixed) {
+                    return res.status(400).json({ message: `Giảm giá VNĐ phải từ ${config.minDiscountFixed} đến ${config.maxDiscountFixed}` });
+                }
             }
         }
         // Sync to WC
@@ -113,6 +116,65 @@ const createMyCoupon = (req, res) => __awaiter(void 0, void 0, void 0, function*
     }
 });
 exports.createMyCoupon = createMyCoupon;
+const updateMyCoupon = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    try {
+        const { discountType, discountValue } = req.body;
+        const coupon = yield Coupon_1.default.findOne({ _id: req.params.id, agentId: (_a = req.user) === null || _a === void 0 ? void 0 : _a._id });
+        if (!coupon)
+            return res.status(404).json({ message: 'Coupon not found' });
+        // Validate rules
+        const config = (yield Config_1.default.findOne()) || { applyRules: true, minDiscountPercent: 10, maxDiscountPercent: 50, minDiscountFixed: 20000, maxDiscountFixed: 500000 };
+        if (config.applyRules) {
+            if (discountType === 'percent') {
+                if (discountValue < config.minDiscountPercent || discountValue > config.maxDiscountPercent) {
+                    return res.status(400).json({ message: `Giảm giá % phải từ ${config.minDiscountPercent}% đến ${config.maxDiscountPercent}%` });
+                }
+            }
+            else {
+                if (discountValue < config.minDiscountFixed || discountValue > config.maxDiscountFixed) {
+                    return res.status(400).json({ message: `Giảm giá VNĐ phải từ ${config.minDiscountFixed} đến ${config.maxDiscountFixed}` });
+                }
+            }
+        }
+        if (coupon.wcCouponId) {
+            yield wcService.updateCoupon(coupon.wcCouponId, {
+                discount_type: discountType,
+                amount: discountValue.toString()
+            });
+        }
+        coupon.discountType = discountType;
+        coupon.discountValue = discountValue;
+        yield coupon.save();
+        res.json(coupon);
+    }
+    catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+exports.updateMyCoupon = updateMyCoupon;
+const deleteMyCoupon = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    try {
+        const coupon = yield Coupon_1.default.findOne({ _id: req.params.id, agentId: (_a = req.user) === null || _a === void 0 ? void 0 : _a._id });
+        if (!coupon)
+            return res.status(404).json({ message: 'Not found' });
+        if (coupon.wcCouponId) {
+            try {
+                yield wcService.deleteCoupon(coupon.wcCouponId);
+            }
+            catch (e) {
+                console.log('WP Coupon delete failed', e);
+            }
+        }
+        yield coupon.deleteOne();
+        res.json({ message: 'Deleted' });
+    }
+    catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+exports.deleteMyCoupon = deleteMyCoupon;
 const getMyOrders = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     try {

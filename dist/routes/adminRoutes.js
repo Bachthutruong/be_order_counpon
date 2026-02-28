@@ -12,7 +12,7 @@ router.route('/agents').get(adminController_1.getAgents).post(adminController_1.
 router.route('/agents/:id').put(adminController_1.updateAgent).delete(adminController_1.deleteAgent);
 router.route('/config').get(adminController_1.getConfig).put(adminController_1.updateConfig);
 router.route('/coupons').get(adminController_1.getCoupons).post(adminController_1.createCouponAdmin);
-router.route('/coupons/:id').delete(adminController_1.deleteCouponAdmin);
+router.route('/coupons/:id').put(adminController_1.updateCouponAdmin).delete(adminController_1.deleteCouponAdmin);
 router.get('/orders', adminController_1.getOrders);
 router.get('/stats', adminController_1.getStats);
 exports.default = router;

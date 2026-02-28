@@ -29,8 +29,8 @@ export const login = async (req: Request, res: Response) => {
     // Set cookie
     res.cookie('token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      secure: true, // Required for sameSite: 'none'
+      sameSite: 'none',
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
 
@@ -83,6 +83,8 @@ export const getMe = async (req: AuthRequest, res: Response) => {
 export const logout = async (req: Request, res: Response) => {
     res.cookie('token', '', {
         httpOnly: true,
+        secure: true,
+        sameSite: 'none',
         expires: new Date(0),
     });
     res.json({ message: 'Logged out' });

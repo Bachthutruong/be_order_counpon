@@ -45,7 +45,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getStats = exports.getOrders = exports.deleteCouponAdmin = exports.createCouponAdmin = exports.getCoupons = exports.updateConfig = exports.getConfig = exports.deleteAgent = exports.updateAgent = exports.createAgent = exports.getAgents = void 0;
+exports.getStats = exports.getOrders = exports.deleteCouponAdmin = exports.updateCouponAdmin = exports.createCouponAdmin = exports.getCoupons = exports.updateConfig = exports.getConfig = exports.deleteAgent = exports.updateAgent = exports.createAgent = exports.getAgents = void 0;
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const User_1 = __importDefault(require("../models/User"));
 const Config_1 = __importDefault(require("../models/Config"));
@@ -135,7 +135,7 @@ const getConfig = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
 exports.getConfig = getConfig;
 const updateConfig = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const { minDiscountPercent, maxDiscountPercent, minDiscountFixed, maxDiscountFixed } = req.body;
+        const { minDiscountPercent, maxDiscountPercent, minDiscountFixed, maxDiscountFixed, applyRules } = req.body;
         let config = yield Config_1.default.findOne();
         if (!config) {
             config = new Config_1.default({});
@@ -144,6 +144,7 @@ const updateConfig = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         config.maxDiscountPercent = maxDiscountPercent;
         config.minDiscountFixed = minDiscountFixed;
         config.maxDiscountFixed = maxDiscountFixed;
+        config.applyRules = applyRules;
         yield config.save();
         res.json(config);
     }
@@ -205,6 +206,28 @@ const createCouponAdmin = (req, res) => __awaiter(void 0, void 0, void 0, functi
     }
 });
 exports.createCouponAdmin = createCouponAdmin;
+const updateCouponAdmin = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { discountType, discountValue } = req.body;
+        const coupon = yield Coupon_1.default.findById(req.params.id);
+        if (!coupon)
+            return res.status(404).json({ message: 'Coupon not found' });
+        if (coupon.wcCouponId) {
+            yield wcService.updateCoupon(coupon.wcCouponId, {
+                discount_type: discountType,
+                amount: discountValue.toString()
+            });
+        }
+        coupon.discountType = discountType;
+        coupon.discountValue = discountValue;
+        yield coupon.save();
+        res.json(coupon);
+    }
+    catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+exports.updateCouponAdmin = updateCouponAdmin;
 const deleteCouponAdmin = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const coupon = yield Coupon_1.default.findById(req.params.id);

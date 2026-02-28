@@ -95,7 +95,7 @@ export const getConfig = async (req: Request, res: Response) => {
 
 export const updateConfig = async (req: Request, res: Response) => {
   try {
-    const { minDiscountPercent, maxDiscountPercent, minDiscountFixed, maxDiscountFixed } = req.body;
+    const { minDiscountPercent, maxDiscountPercent, minDiscountFixed, maxDiscountFixed, applyRules } = req.body;
     let config = await Config.findOne();
     if (!config) {
       config = new Config({});
@@ -104,6 +104,7 @@ export const updateConfig = async (req: Request, res: Response) => {
     config.maxDiscountPercent = maxDiscountPercent;
     config.minDiscountFixed = minDiscountFixed;
     config.maxDiscountFixed = maxDiscountFixed;
+    config.applyRules = applyRules;
     await config.save();
     res.json(config);
   } catch (error: any) {
@@ -161,6 +162,29 @@ export const createCouponAdmin = async (req: Request, res: Response) => {
     });
     
     res.status(201).json(coupon);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const updateCouponAdmin = async (req: Request, res: Response) => {
+  try {
+    const { discountType, discountValue } = req.body;
+    const coupon = await Coupon.findById(req.params.id);
+    if (!coupon) return res.status(404).json({ message: 'Coupon not found' });
+
+    if (coupon.wcCouponId) {
+      await wcService.updateCoupon(coupon.wcCouponId, {
+        discount_type: discountType,
+        amount: discountValue.toString()
+      });
+    }
+
+    coupon.discountType = discountType;
+    coupon.discountValue = discountValue;
+    await coupon.save();
+
+    res.json(coupon);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }

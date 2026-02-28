@@ -29,6 +29,12 @@ export const createCoupon = async (code: string, amount: string, discount_type: 
   return response.data;
 };
 
+export const updateCoupon = async (id: number, data: any) => {
+  const client = getClient();
+  const response = await client.put(`/coupons/${id}`, data);
+  return response.data;
+};
+
 export const deleteCoupon = async (id: number) => {
   const client = getClient();
   const response = await client.delete(`/coupons/${id}?force=true`);

@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getOrders = exports.deleteCoupon = exports.createCoupon = void 0;
+exports.getOrders = exports.deleteCoupon = exports.updateCoupon = exports.createCoupon = void 0;
 const axios_1 = __importDefault(require("axios"));
 const getClient = () => {
     const url = process.env.WC_STORE_URL || 'https://trayson.tw';
@@ -40,6 +40,12 @@ const createCoupon = (code, amount, discount_type) => __awaiter(void 0, void 0, 
     return response.data;
 });
 exports.createCoupon = createCoupon;
+const updateCoupon = (id, data) => __awaiter(void 0, void 0, void 0, function* () {
+    const client = getClient();
+    const response = yield client.put(`/coupons/${id}`, data);
+    return response.data;
+});
+exports.updateCoupon = updateCoupon;
 const deleteCoupon = (id) => __awaiter(void 0, void 0, void 0, function* () {
     const client = getClient();
     const response = yield client.delete(`/coupons/${id}?force=true`);

@@ -9,6 +9,7 @@ const authMiddleware_1 = require("../middleware/authMiddleware");
 const router = express_1.default.Router();
 router.use(authMiddleware_1.protect);
 router.route('/coupons').get(agentController_1.getMyCoupons).post(agentController_1.createMyCoupon);
+router.route('/coupons/:id').put(agentController_1.updateMyCoupon).delete(agentController_1.deleteMyCoupon);
 router.get('/orders', agentController_1.getMyOrders);
 router.get('/stats', agentController_1.getMyStats);
 exports.default = router;
