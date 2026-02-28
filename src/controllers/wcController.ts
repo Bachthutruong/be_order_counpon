@@ -74,3 +74,41 @@ export const syncOrders = async (req: Request, res: Response) => {
     res.status(500).json({ message: 'Lỗi hệ thống trong quá trình đồng bộ.' });
   }
 };
+
+export const doSyncCoupons = async () => {
+    const coupons = await Coupon.find();
+    let synced = 0;
+
+    for (const coupon of coupons) {
+        if (!coupon.wcCouponId) {
+            try {
+                // Try create in WC
+                const wcResult = await wcService.createCoupon(coupon.code, coupon.discountValue.toString(), coupon.discountType);
+                if (wcResult && wcResult.id) {
+                    coupon.wcCouponId = wcResult.id;
+                    await coupon.save();
+                    synced++;
+                } else {
+                    const errorMsg = wcResult.message || 'WC API returned success but no ID found';
+                    console.error(`Sync coupon ${coupon.code} failed:`, errorMsg);
+                    // We don't increment synced here
+                    if (coupons.length === 1) throw new Error(errorMsg);
+                }
+            } catch (e: any) {
+                // If code already exists in WC, we should ideally fetch it, but usually it's just a sync conflict.
+                console.error(`Sync coupon ${coupon.code} failed:`, e.response?.data?.message || e.message);
+                // If it already exists, error message may contain "ID already exists" or similar.
+            }
+        }
+    }
+    return synced;
+};
+
+export const syncCoupons = async (req: Request, res: Response) => {
+    try {
+        const synced = await doSyncCoupons();
+        res.json({ message: `Successfully synced ${synced} coupons to WordPress`, synced });
+    } catch (error: any) {
+        res.status(500).json({ message: error.message });
+    }
+};

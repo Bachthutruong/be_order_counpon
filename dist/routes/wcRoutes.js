@@ -8,4 +8,5 @@ const wcController_1 = require("../controllers/wcController");
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const router = express_1.default.Router();
 router.post('/sync-orders', authMiddleware_1.protect, authMiddleware_1.adminOnly, wcController_1.syncOrders);
+router.post('/sync-coupons', authMiddleware_1.protect, authMiddleware_1.adminOnly, wcController_1.syncCoupons);
 exports.default = router;

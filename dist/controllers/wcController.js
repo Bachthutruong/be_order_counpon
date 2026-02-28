@@ -45,7 +45,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.syncOrders = exports.doSyncOrders = void 0;
+exports.syncCoupons = exports.doSyncCoupons = exports.syncOrders = exports.doSyncOrders = void 0;
 const wcService = __importStar(require("../services/wcService"));
 const Order_1 = __importDefault(require("../models/Order"));
 const Coupon_1 = __importDefault(require("../models/Coupon"));
@@ -117,3 +117,45 @@ const syncOrders = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
     }
 });
 exports.syncOrders = syncOrders;
+const doSyncCoupons = () => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b;
+    const coupons = yield Coupon_1.default.find();
+    let synced = 0;
+    for (const coupon of coupons) {
+        if (!coupon.wcCouponId) {
+            try {
+                // Try create in WC
+                const wcResult = yield wcService.createCoupon(coupon.code, coupon.discountValue.toString(), coupon.discountType);
+                if (wcResult && wcResult.id) {
+                    coupon.wcCouponId = wcResult.id;
+                    yield coupon.save();
+                    synced++;
+                }
+                else {
+                    const errorMsg = wcResult.message || 'WC API returned success but no ID found';
+                    console.error(`Sync coupon ${coupon.code} failed:`, errorMsg);
+                    // We don't increment synced here
+                    if (coupons.length === 1)
+                        throw new Error(errorMsg);
+                }
+            }
+            catch (e) {
+                // If code already exists in WC, we should ideally fetch it, but usually it's just a sync conflict.
+                console.error(`Sync coupon ${coupon.code} failed:`, ((_b = (_a = e.response) === null || _a === void 0 ? void 0 : _a.data) === null || _b === void 0 ? void 0 : _b.message) || e.message);
+                // If it already exists, error message may contain "ID already exists" or similar.
+            }
+        }
+    }
+    return synced;
+});
+exports.doSyncCoupons = doSyncCoupons;
+const syncCoupons = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const synced = yield (0, exports.doSyncCoupons)();
+        res.json({ message: `Successfully synced ${synced} coupons to WordPress`, synced });
+    }
+    catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+exports.syncCoupons = syncCoupons;
