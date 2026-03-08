@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import mongoose from 'mongoose';
 import User from '../models/User';
 import Config from '../models/Config';
 import Coupon from '../models/Coupon';
@@ -36,11 +37,12 @@ export const createAgent = async (req: Request, res: Response) => {
     const { name, phone } = req.body;
     const exists = await User.findOne({ phone });
     if (exists) {
-      return res.status(400).json({ message: 'Phone already exists' });
+      return res.status(400).json({ message: '此電話號碼已存在' });
     }
 
     const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash('123456789', salt);
+    const defaultPassword = (await Config.findOne().select('defaultAgentPassword').then(c => c?.defaultAgentPassword)) || '123456789';
+    const hashedPassword = await bcrypt.hash(defaultPassword, salt);
 
     const agent = await User.create({
       name,
@@ -74,7 +76,7 @@ export const updateAgent = async (req: Request, res: Response) => {
 export const deleteAgent = async (req: Request, res: Response) => {
   try {
     await User.findOneAndDelete({ _id: req.params.id, role: 'AGENT' });
-    res.json({ message: 'Agent deleted' });
+    res.json({ message: '經銷商已刪除' });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -95,7 +97,7 @@ export const getConfig = async (req: Request, res: Response) => {
 
 export const updateConfig = async (req: Request, res: Response) => {
   try {
-    const { minDiscountPercent, maxDiscountPercent, minDiscountFixed, maxDiscountFixed, applyRules } = req.body;
+    const { minDiscountPercent, maxDiscountPercent, minDiscountFixed, maxDiscountFixed, applyRules, defaultAgentPassword } = req.body;
     let config = await Config.findOne();
     if (!config) {
       config = new Config({});
@@ -105,6 +107,9 @@ export const updateConfig = async (req: Request, res: Response) => {
     config.minDiscountFixed = minDiscountFixed;
     config.maxDiscountFixed = maxDiscountFixed;
     config.applyRules = applyRules;
+    if (defaultAgentPassword !== undefined) {
+      config.defaultAgentPassword = defaultAgentPassword || undefined;
+    }
     await config.save();
     res.json(config);
   } catch (error: any) {
@@ -150,7 +155,7 @@ export const createCouponAdmin = async (req: Request, res: Response) => {
       wcId = wcCoupon.id;
     } catch (e: any) {
       console.log('Error creating WP coupon', e.response?.data || e.message);
-      return res.status(400).json({ message: 'Lỗi đồng bộ mã với WordPress' });
+      return res.status(400).json({ message: '與 WordPress 同步折扣碼時發生錯誤' });
     }
 
     const coupon = await Coupon.create({
@@ -171,7 +176,7 @@ export const updateCouponAdmin = async (req: Request, res: Response) => {
   try {
     const { discountType, discountValue } = req.body;
     const coupon = await Coupon.findById(req.params.id);
-    if (!coupon) return res.status(404).json({ message: 'Coupon not found' });
+    if (!coupon) return res.status(404).json({ message: '找不到折扣碼' });
 
     if (coupon.wcCouponId) {
       await wcService.updateCoupon(coupon.wcCouponId, {
@@ -193,7 +198,7 @@ export const updateCouponAdmin = async (req: Request, res: Response) => {
 export const deleteCouponAdmin = async (req: Request, res: Response) => {
   try {
     const coupon = await Coupon.findById(req.params.id);
-    if (!coupon) return res.status(404).json({ message: 'Not found' });
+    if (!coupon) return res.status(404).json({ message: '找不到' });
 
     if (coupon.wcCouponId) {
        try {
@@ -204,7 +209,7 @@ export const deleteCouponAdmin = async (req: Request, res: Response) => {
     }
     
     await coupon.deleteOne();
-    res.json({ message: 'Deleted' });
+    res.json({ message: '已刪除' });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -256,16 +261,13 @@ export const getStats = async (req: Request, res: Response) => {
       if (endDate) matchStage.dateCreated.$lte = new Date(endDate as string);
     }
 
-    // Usually we only count completed/processing orders towards revenue
-    // matchStage.status = { $in: ['completed', 'processing'] };
-    // Depending on WP order statuses: pending, processing, on-hold, completed, cancelled, refunded, failed
-    matchStage.status = { $in: ['completed', 'processing', 'on-hold'] }; // Typical valid orders
+    matchStage.status = { $in: ['completed', 'processing', 'on-hold'] };
 
     const pipeline = [
       { $match: matchStage },
       { 
         $group: {
-          _id: null, // Group total summary
+          _id: null,
           totalRevenue: { $sum: "$total" },
           totalOrders: { $sum: 1 },
           discountGiven: { $sum: "$discountTotal" }
@@ -275,7 +277,6 @@ export const getStats = async (req: Request, res: Response) => {
 
     const stats = await Order.aggregate(pipeline);
     
-    // Daily stats for chart
     const dailyPipeline = [
       { $match: matchStage },
       {
@@ -293,6 +294,55 @@ export const getStats = async (req: Request, res: Response) => {
       summary: stats[0] || { totalRevenue: 0, totalOrders: 0, discountGiven: 0 },
       daily: dailyStats.map(d => ({ date: d._id, revenue: d.revenue, orders: d.orders }))
     });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/** Thống kê doanh thu theo từng đại lý, lọc theo khoảng thời gian và/hoặc đại lý */
+export const getStatsRevenueByAgent = async (req: Request, res: Response) => {
+  try {
+    const { startDate, endDate, agentId } = req.query;
+    const matchStage: any = { status: { $in: ['completed', 'processing', 'on-hold'] } };
+
+    if (agentId && agentId !== 'all') {
+      matchStage.agentId = new mongoose.Types.ObjectId(agentId as string);
+    }
+
+    if (startDate || endDate) {
+      matchStage.dateCreated = {};
+      if (startDate) matchStage.dateCreated.$gte = new Date(startDate as string);
+      if (endDate) matchStage.dateCreated.$lte = new Date(endDate as string);
+    }
+
+    const pipeline = [
+      { $match: matchStage },
+      {
+        $group: {
+          _id: '$agentId',
+          totalRevenue: { $sum: '$total' },
+          totalOrders: { $sum: 1 },
+          discountGiven: { $sum: '$discountTotal' }
+        }
+      },
+      { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'agent' } },
+      { $unwind: { path: '$agent', preserveNullAndEmptyArrays: true } },
+      { $sort: { totalRevenue: -1 } },
+      {
+        $project: {
+          agentId: '$_id',
+          agentName: { $ifNull: ['$agent.name', 'Không gán đại lý'] },
+          agentPhone: '$agent.phone',
+          totalRevenue: 1,
+          totalOrders: 1,
+          discountGiven: 1,
+          _id: 0
+        }
+      }
+    ];
+
+    const result = await Order.aggregate(pipeline as any);
+    res.json({ data: result });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }

@@ -3,16 +3,54 @@ import * as wcService from '../services/wcService';
 import Order from '../models/Order';
 import Coupon from '../models/Coupon';
 
+const dbCouponsToMap = async () => {
+  const dbCoupons = await Coupon.find();
+  const couponMap: Record<string, any> = {};
+  dbCoupons.forEach(c => { couponMap[c.code.toLowerCase()] = c.agentId; });
+  return couponMap;
+};
+
+const mapWcOrderToLocal = (data: any, couponMap: Record<string, any>) => {
+  let couponCodeUsed = undefined;
+  let agentId = undefined;
+  if (data.coupon_lines && data.coupon_lines.length > 0) {
+    const cc = data.coupon_lines[0].code.toLowerCase();
+    couponCodeUsed = cc;
+    agentId = couponMap[cc] || null;
+  }
+  return {
+    wcOrderId: data.id,
+    total: parseFloat(data.total),
+    discountTotal: parseFloat(data.discount_total),
+    couponCodeUsed,
+    agentId,
+    status: data.status,
+    dateCreated: new Date(data.date_created),
+    currency: data.currency,
+    customerName: `${data.billing?.first_name || ''} ${data.billing?.last_name || ''}`.trim() || 'Guest'
+  };
+};
+
+/** Đồng bộ một đơn từ WC vào DB (dùng cho webhook và sau khi update) */
+export const syncSingleOrder = async (wcOrderId: number): Promise<boolean> => {
+  const couponMap = await dbCouponsToMap();
+  try {
+    const data = await wcService.getOrder(wcOrderId);
+    const orderData = mapWcOrderToLocal(data, couponMap);
+    await Order.findOneAndUpdate({ wcOrderId }, orderData, { upsert: true });
+    return true;
+  } catch (e: any) {
+    console.error('syncSingleOrder error', wcOrderId, e.response?.data?.message || e.message);
+    return false;
+  }
+};
+
 export const doSyncOrders = async () => {
     let page = 1;
     let keepGoing = true;
     let imported = 0;
 
-    const dbCoupons = await Coupon.find();
-    const couponMap: Record<string, any> = {};
-    dbCoupons.forEach(c => {
-      couponMap[c.code.toLowerCase()] = c.agentId;
-    });
+    const couponMap = await dbCouponsToMap();
 
     while (keepGoing) {
       try {
@@ -28,27 +66,7 @@ export const doSyncOrders = async () => {
         }
         
         for (const data of wcOrders) {
-          let couponCodeUsed = undefined;
-          let agentId = undefined;
-
-          if (data.coupon_lines && data.coupon_lines.length > 0) {
-             const cc = data.coupon_lines[0].code.toLowerCase();
-             couponCodeUsed = cc;
-             agentId = couponMap[cc] || null;
-          }
-
-          const orderData = {
-            wcOrderId: data.id,
-            total: parseFloat(data.total),
-            discountTotal: parseFloat(data.discount_total),
-            couponCodeUsed,
-            agentId,
-            status: data.status,
-            dateCreated: new Date(data.date_created),
-            currency: data.currency,
-            customerName: `${data.billing?.first_name || ''} ${data.billing?.last_name || ''}`.trim() || 'Guest'
-          };
-
+          const orderData = mapWcOrderToLocal(data, couponMap);
           await Order.findOneAndUpdate({ wcOrderId: data.id }, orderData, { upsert: true });
           imported++;
         }
@@ -59,7 +77,7 @@ export const doSyncOrders = async () => {
          if (imported === 0) {
             throw new Error(errorMsg);
          }
-         break; // stop on network error or end of items after some imports
+         break;
       }
     }
     return imported;
@@ -68,10 +86,70 @@ export const doSyncOrders = async () => {
 export const syncOrders = async (req: Request, res: Response) => {
   try {
     const imported = await doSyncOrders();
-    res.json({ message: `Successfully synced ${imported} orders`, imported });
+    res.json({ message: `已同步 ${imported} 筆訂單`, imported });
   } catch (error: any) {
     console.error('Sync request Error', error);
-    res.status(500).json({ message: 'Lỗi hệ thống trong quá trình đồng bộ.' });
+    res.status(500).json({ message: '同步過程中發生系統錯誤。' });
+  }
+};
+
+/** Chi tiết đơn hàng (lấy từ WC + merge agent từ DB) */
+export const getOrderDetail = async (req: Request, res: Response) => {
+  try {
+    const idParam = Array.isArray(req.params.wcOrderId) ? req.params.wcOrderId[0] : req.params.wcOrderId;
+    const wcOrderId = parseInt(idParam ?? '', 10);
+    if (isNaN(wcOrderId)) return res.status(400).json({ message: '訂單 ID 無效' });
+    const wcOrder = await wcService.getOrder(wcOrderId);
+    const local = await Order.findOne({ wcOrderId }).populate('agentId', 'name phone');
+    res.json({
+      ...wcOrder,
+      agentId: local?.agentId,
+      couponCodeUsed: local?.couponCodeUsed,
+    });
+  } catch (error: any) {
+    const msg = error.response?.data?.message || error.message;
+    if (error.response?.status === 404) return res.status(404).json({ message: 'WordPress 中找不到此訂單' });
+    res.status(500).json({ message: msg });
+  }
+};
+
+/** Cập nhật đơn hàng trên WordPress rồi đồng bộ lại DB (dùng luôn response từ WC để ghi DB, tránh lệch dữ liệu) */
+export const updateOrder = async (req: Request, res: Response) => {
+  try {
+    const idParam = Array.isArray(req.params.wcOrderId) ? req.params.wcOrderId[0] : req.params.wcOrderId;
+    const wcOrderId = parseInt(idParam ?? '', 10);
+    if (isNaN(wcOrderId)) return res.status(400).json({ message: '訂單 ID 無效' });
+    const { status, billing } = req.body;
+    const payload: { status?: string; billing?: Record<string, string> } = {};
+    if (status !== undefined) payload.status = status;
+    if (billing !== undefined) payload.billing = billing;
+
+    const wcUpdated = await wcService.updateOrder(wcOrderId, payload);
+    const couponMap = await dbCouponsToMap();
+    const orderData = mapWcOrderToLocal(wcUpdated, couponMap);
+    await Order.findOneAndUpdate({ wcOrderId }, orderData, { upsert: true, new: true });
+    const local = await Order.findOne({ wcOrderId }).populate('agentId', 'name phone');
+    res.json(local);
+  } catch (error: any) {
+    const msg = error.response?.data?.message || error.message;
+    if (error.response?.status === 404) return res.status(404).json({ message: 'WordPress 中找不到此訂單' });
+    res.status(500).json({ message: msg });
+  }
+};
+
+/** Webhook do WordPress gọi khi có đơn mới/cập nhật – đồng bộ đơn đó ngay */
+export const webhookOrder = async (req: Request, res: Response) => {
+  try {
+    const id = req.body?.id ?? req.body?.order_id;
+    const wcOrderId = typeof id === 'number' ? id : parseInt(String(id), 10);
+    if (isNaN(wcOrderId)) {
+      return res.status(400).json({ message: '請求內容缺少或無效的訂單 ID' });
+    }
+    const ok = await syncSingleOrder(wcOrderId);
+    res.status(ok ? 200 : 500).json({ synced: ok });
+  } catch (error: any) {
+    console.error('webhookOrder', error);
+    res.status(500).json({ message: error.message });
   }
 };
 
@@ -107,7 +185,7 @@ export const doSyncCoupons = async () => {
 export const syncCoupons = async (req: Request, res: Response) => {
     try {
         const synced = await doSyncCoupons();
-        res.json({ message: `Successfully synced ${synced} coupons to WordPress`, synced });
+        res.json({ message: `已同步 ${synced} 個折扣碼至 WordPress`, synced });
     } catch (error: any) {
         res.status(500).json({ message: error.message });
     }

@@ -46,4 +46,16 @@ export const getOrders = async (page: number = 1) => {
   const client = getClient();
   const response = await client.get(`/orders?per_page=50&page=${page}`);
   return response.data;
-}
+};
+
+export const getOrder = async (id: number) => {
+  const client = getClient();
+  const response = await client.get(`/orders/${id}`);
+  return response.data;
+};
+
+export const updateOrder = async (id: number, payload: { status?: string; billing?: Record<string, string> }) => {
+  const client = getClient();
+  const response = await client.put(`/orders/${id}`, payload);
+  return response.data;
+};

@@ -83,12 +83,12 @@ const createMyCoupon = (req, res) => __awaiter(void 0, void 0, void 0, function*
         if (config.applyRules) {
             if (discountType === 'percent') {
                 if (discountValue < config.minDiscountPercent || discountValue > config.maxDiscountPercent) {
-                    return res.status(400).json({ message: `Giảm giá % phải từ ${config.minDiscountPercent}% đến ${config.maxDiscountPercent}%` });
+                    return res.status(400).json({ message: `折扣 % 須介於 ${config.minDiscountPercent}% 至 ${config.maxDiscountPercent}%` });
                 }
             }
             else {
                 if (discountValue < config.minDiscountFixed || discountValue > config.maxDiscountFixed) {
-                    return res.status(400).json({ message: `Giảm giá VNĐ phải từ ${config.minDiscountFixed} đến ${config.maxDiscountFixed}` });
+                    return res.status(400).json({ message: `折扣金額須介於 ${config.minDiscountFixed} 至 ${config.maxDiscountFixed}` });
                 }
             }
         }
@@ -100,7 +100,7 @@ const createMyCoupon = (req, res) => __awaiter(void 0, void 0, void 0, function*
         }
         catch (e) {
             console.log('Error creating WP coupon by Agent', ((_a = e.response) === null || _a === void 0 ? void 0 : _a.data) || e.message);
-            return res.status(400).json({ message: 'Lỗi tạo mã với hệ thống WordPress' });
+            return res.status(400).json({ message: '與 WordPress 建立折扣碼時發生錯誤' });
         }
         const coupon = yield Coupon_1.default.create({
             code,
@@ -122,18 +122,18 @@ const updateMyCoupon = (req, res) => __awaiter(void 0, void 0, void 0, function*
         const { discountType, discountValue } = req.body;
         const coupon = yield Coupon_1.default.findOne({ _id: req.params.id, agentId: (_a = req.user) === null || _a === void 0 ? void 0 : _a._id });
         if (!coupon)
-            return res.status(404).json({ message: 'Coupon not found' });
+            return res.status(404).json({ message: '找不到折扣碼' });
         // Validate rules
         const config = (yield Config_1.default.findOne()) || { applyRules: true, minDiscountPercent: 10, maxDiscountPercent: 50, minDiscountFixed: 20000, maxDiscountFixed: 500000 };
         if (config.applyRules) {
             if (discountType === 'percent') {
                 if (discountValue < config.minDiscountPercent || discountValue > config.maxDiscountPercent) {
-                    return res.status(400).json({ message: `Giảm giá % phải từ ${config.minDiscountPercent}% đến ${config.maxDiscountPercent}%` });
+                    return res.status(400).json({ message: `折扣 % 須介於 ${config.minDiscountPercent}% 至 ${config.maxDiscountPercent}%` });
                 }
             }
             else {
                 if (discountValue < config.minDiscountFixed || discountValue > config.maxDiscountFixed) {
-                    return res.status(400).json({ message: `Giảm giá VNĐ phải từ ${config.minDiscountFixed} đến ${config.maxDiscountFixed}` });
+                    return res.status(400).json({ message: `折扣金額須介於 ${config.minDiscountFixed} 至 ${config.maxDiscountFixed}` });
                 }
             }
         }
@@ -158,7 +158,7 @@ const deleteMyCoupon = (req, res) => __awaiter(void 0, void 0, void 0, function*
     try {
         const coupon = yield Coupon_1.default.findOne({ _id: req.params.id, agentId: (_a = req.user) === null || _a === void 0 ? void 0 : _a._id });
         if (!coupon)
-            return res.status(404).json({ message: 'Not found' });
+            return res.status(404).json({ message: '找不到' });
         if (coupon.wcCouponId) {
             try {
                 yield wcService.deleteCoupon(coupon.wcCouponId);
@@ -168,7 +168,7 @@ const deleteMyCoupon = (req, res) => __awaiter(void 0, void 0, void 0, function*
             }
         }
         yield coupon.deleteOne();
-        res.json({ message: 'Deleted' });
+        res.json({ message: '已刪除' });
     }
     catch (error) {
         res.status(500).json({ message: error.message });

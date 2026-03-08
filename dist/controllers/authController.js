@@ -26,11 +26,11 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         const { phone, password } = req.body;
         const user = yield User_1.default.findOne({ phone, active: true });
         if (!user) {
-            return res.status(401).json({ message: 'Invalid credentials or inactive user' });
+            return res.status(401).json({ message: '帳號或密碼錯誤，或帳號已停用' });
         }
         const isMatch = yield bcryptjs_1.default.compare(password, user.password);
         if (!isMatch) {
-            return res.status(401).json({ message: 'Invalid credentials' });
+            return res.status(401).json({ message: '帳號或密碼錯誤' });
         }
         const token = generateToken(user._id.toString());
         // Set cookie
@@ -60,16 +60,16 @@ const changePassword = (req, res) => __awaiter(void 0, void 0, void 0, function*
         const { oldPassword, newPassword } = req.body;
         const user = yield User_1.default.findById((_a = req.user) === null || _a === void 0 ? void 0 : _a._id);
         if (!user) {
-            return res.status(404).json({ message: 'User not found' });
+            return res.status(404).json({ message: '找不到使用者' });
         }
         const isMatch = yield bcryptjs_1.default.compare(oldPassword, user.password);
         if (!isMatch) {
-            return res.status(400).json({ message: 'Invalid old password' });
+            return res.status(400).json({ message: '目前密碼錯誤' });
         }
         user.password = yield bcryptjs_1.default.hash(newPassword, 10);
         user.isFirstLogin = false; // Mark as not first login
         yield user.save();
-        res.json({ message: 'Password updated successfully' });
+        res.json({ message: '密碼已更新' });
     }
     catch (error) {
         res.status(500).json({ message: error.message });
@@ -94,6 +94,6 @@ const logout = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         sameSite: 'none',
         expires: new Date(0),
     });
-    res.json({ message: 'Logged out' });
+    res.json({ message: '已登出' });
 });
 exports.logout = logout;

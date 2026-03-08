@@ -45,8 +45,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getStats = exports.getOrders = exports.deleteCouponAdmin = exports.updateCouponAdmin = exports.createCouponAdmin = exports.getCoupons = exports.updateConfig = exports.getConfig = exports.deleteAgent = exports.updateAgent = exports.createAgent = exports.getAgents = void 0;
+exports.getStatsRevenueByAgent = exports.getStats = exports.getOrders = exports.deleteCouponAdmin = exports.updateCouponAdmin = exports.createCouponAdmin = exports.getCoupons = exports.updateConfig = exports.getConfig = exports.deleteAgent = exports.updateAgent = exports.createAgent = exports.getAgents = void 0;
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
+const mongoose_1 = __importDefault(require("mongoose"));
 const User_1 = __importDefault(require("../models/User"));
 const Config_1 = __importDefault(require("../models/Config"));
 const Coupon_1 = __importDefault(require("../models/Coupon"));
@@ -79,10 +80,11 @@ const createAgent = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         const { name, phone } = req.body;
         const exists = yield User_1.default.findOne({ phone });
         if (exists) {
-            return res.status(400).json({ message: 'Phone already exists' });
+            return res.status(400).json({ message: '此電話號碼已存在' });
         }
         const salt = yield bcryptjs_1.default.genSalt(10);
-        const hashedPassword = yield bcryptjs_1.default.hash('123456789', salt);
+        const defaultPassword = (yield Config_1.default.findOne().select('defaultAgentPassword').then(c => c === null || c === void 0 ? void 0 : c.defaultAgentPassword)) || '123456789';
+        const hashedPassword = yield bcryptjs_1.default.hash(defaultPassword, salt);
         const agent = yield User_1.default.create({
             name,
             phone,
@@ -112,7 +114,7 @@ exports.updateAgent = updateAgent;
 const deleteAgent = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         yield User_1.default.findOneAndDelete({ _id: req.params.id, role: 'AGENT' });
-        res.json({ message: 'Agent deleted' });
+        res.json({ message: '經銷商已刪除' });
     }
     catch (error) {
         res.status(500).json({ message: error.message });
@@ -135,7 +137,7 @@ const getConfig = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
 exports.getConfig = getConfig;
 const updateConfig = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const { minDiscountPercent, maxDiscountPercent, minDiscountFixed, maxDiscountFixed, applyRules } = req.body;
+        const { minDiscountPercent, maxDiscountPercent, minDiscountFixed, maxDiscountFixed, applyRules, defaultAgentPassword } = req.body;
         let config = yield Config_1.default.findOne();
         if (!config) {
             config = new Config_1.default({});
@@ -145,6 +147,9 @@ const updateConfig = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         config.minDiscountFixed = minDiscountFixed;
         config.maxDiscountFixed = maxDiscountFixed;
         config.applyRules = applyRules;
+        if (defaultAgentPassword !== undefined) {
+            config.defaultAgentPassword = defaultAgentPassword || undefined;
+        }
         yield config.save();
         res.json(config);
     }
@@ -190,7 +195,7 @@ const createCouponAdmin = (req, res) => __awaiter(void 0, void 0, void 0, functi
         }
         catch (e) {
             console.log('Error creating WP coupon', ((_a = e.response) === null || _a === void 0 ? void 0 : _a.data) || e.message);
-            return res.status(400).json({ message: 'Lỗi đồng bộ mã với WordPress' });
+            return res.status(400).json({ message: '與 WordPress 同步折扣碼時發生錯誤' });
         }
         const coupon = yield Coupon_1.default.create({
             code,
@@ -211,7 +216,7 @@ const updateCouponAdmin = (req, res) => __awaiter(void 0, void 0, void 0, functi
         const { discountType, discountValue } = req.body;
         const coupon = yield Coupon_1.default.findById(req.params.id);
         if (!coupon)
-            return res.status(404).json({ message: 'Coupon not found' });
+            return res.status(404).json({ message: '找不到折扣碼' });
         if (coupon.wcCouponId) {
             yield wcService.updateCoupon(coupon.wcCouponId, {
                 discount_type: discountType,
@@ -232,7 +237,7 @@ const deleteCouponAdmin = (req, res) => __awaiter(void 0, void 0, void 0, functi
     try {
         const coupon = yield Coupon_1.default.findById(req.params.id);
         if (!coupon)
-            return res.status(404).json({ message: 'Not found' });
+            return res.status(404).json({ message: '找不到' });
         if (coupon.wcCouponId) {
             try {
                 yield wcService.deleteCoupon(coupon.wcCouponId);
@@ -242,7 +247,7 @@ const deleteCouponAdmin = (req, res) => __awaiter(void 0, void 0, void 0, functi
             }
         }
         yield coupon.deleteOne();
-        res.json({ message: 'Deleted' });
+        res.json({ message: '已刪除' });
     }
     catch (error) {
         res.status(500).json({ message: error.message });
@@ -292,15 +297,12 @@ const getStats = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             if (endDate)
                 matchStage.dateCreated.$lte = new Date(endDate);
         }
-        // Usually we only count completed/processing orders towards revenue
-        // matchStage.status = { $in: ['completed', 'processing'] };
-        // Depending on WP order statuses: pending, processing, on-hold, completed, cancelled, refunded, failed
-        matchStage.status = { $in: ['completed', 'processing', 'on-hold'] }; // Typical valid orders
+        matchStage.status = { $in: ['completed', 'processing', 'on-hold'] };
         const pipeline = [
             { $match: matchStage },
             {
                 $group: {
-                    _id: null, // Group total summary
+                    _id: null,
                     totalRevenue: { $sum: "$total" },
                     totalOrders: { $sum: 1 },
                     discountGiven: { $sum: "$discountTotal" }
@@ -308,7 +310,6 @@ const getStats = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             }
         ];
         const stats = yield Order_1.default.aggregate(pipeline);
-        // Daily stats for chart
         const dailyPipeline = [
             { $match: matchStage },
             {
@@ -331,3 +332,51 @@ const getStats = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     }
 });
 exports.getStats = getStats;
+/** Thống kê doanh thu theo từng đại lý, lọc theo khoảng thời gian và/hoặc đại lý */
+const getStatsRevenueByAgent = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { startDate, endDate, agentId } = req.query;
+        const matchStage = { status: { $in: ['completed', 'processing', 'on-hold'] } };
+        if (agentId && agentId !== 'all') {
+            matchStage.agentId = new mongoose_1.default.Types.ObjectId(agentId);
+        }
+        if (startDate || endDate) {
+            matchStage.dateCreated = {};
+            if (startDate)
+                matchStage.dateCreated.$gte = new Date(startDate);
+            if (endDate)
+                matchStage.dateCreated.$lte = new Date(endDate);
+        }
+        const pipeline = [
+            { $match: matchStage },
+            {
+                $group: {
+                    _id: '$agentId',
+                    totalRevenue: { $sum: '$total' },
+                    totalOrders: { $sum: 1 },
+                    discountGiven: { $sum: '$discountTotal' }
+                }
+            },
+            { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'agent' } },
+            { $unwind: { path: '$agent', preserveNullAndEmptyArrays: true } },
+            { $sort: { totalRevenue: -1 } },
+            {
+                $project: {
+                    agentId: '$_id',
+                    agentName: { $ifNull: ['$agent.name', 'Không gán đại lý'] },
+                    agentPhone: '$agent.phone',
+                    totalRevenue: 1,
+                    totalOrders: 1,
+                    discountGiven: 1,
+                    _id: 0
+                }
+            }
+        ];
+        const result = yield Order_1.default.aggregate(pipeline);
+        res.json({ data: result });
+    }
+    catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+exports.getStatsRevenueByAgent = getStatsRevenueByAgent;

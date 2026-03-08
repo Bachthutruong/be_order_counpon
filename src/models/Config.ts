@@ -6,6 +6,8 @@ export interface IConfig extends Document {
   minDiscountFixed: number;
   maxDiscountFixed: number;
   applyRules: boolean;
+  /** Mật khẩu mặc định khi admin tạo đại lý mới */
+  defaultAgentPassword?: string;
 }
 
 const ConfigSchema: Schema = new Schema({
@@ -14,6 +16,7 @@ const ConfigSchema: Schema = new Schema({
   minDiscountFixed: { type: Number, default: 0 },
   maxDiscountFixed: { type: Number, default: 999999999 },
   applyRules: { type: Boolean, default: true },
+  defaultAgentPassword: { type: String },
 }, { timestamps: true });
 
 export default mongoose.model<IConfig>('Config', ConfigSchema);

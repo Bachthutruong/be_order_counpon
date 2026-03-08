@@ -1,5 +1,5 @@
 import express from 'express';
-import { getAgents, createAgent, updateAgent, deleteAgent, getConfig, updateConfig, getCoupons, createCouponAdmin, updateCouponAdmin, deleteCouponAdmin, getOrders, getStats } from '../controllers/adminController';
+import { getAgents, createAgent, updateAgent, deleteAgent, getConfig, updateConfig, getCoupons, createCouponAdmin, updateCouponAdmin, deleteCouponAdmin, getOrders, getStats, getStatsRevenueByAgent } from '../controllers/adminController';
 import { protect, adminOnly } from '../middleware/authMiddleware';
 
 const router = express.Router();
@@ -16,5 +16,6 @@ router.route('/coupons/:id').put(updateCouponAdmin).delete(deleteCouponAdmin);
 
 router.get('/orders', getOrders);
 router.get('/stats', getStats);
+router.get('/stats/revenue-by-agent', getStatsRevenueByAgent);
 
 export default router;

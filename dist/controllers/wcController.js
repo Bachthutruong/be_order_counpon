@@ -45,20 +45,59 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.syncCoupons = exports.doSyncCoupons = exports.syncOrders = exports.doSyncOrders = void 0;
+exports.syncCoupons = exports.doSyncCoupons = exports.webhookOrder = exports.updateOrder = exports.getOrderDetail = exports.syncOrders = exports.doSyncOrders = exports.syncSingleOrder = void 0;
 const wcService = __importStar(require("../services/wcService"));
 const Order_1 = __importDefault(require("../models/Order"));
 const Coupon_1 = __importDefault(require("../models/Coupon"));
+const dbCouponsToMap = () => __awaiter(void 0, void 0, void 0, function* () {
+    const dbCoupons = yield Coupon_1.default.find();
+    const couponMap = {};
+    dbCoupons.forEach(c => { couponMap[c.code.toLowerCase()] = c.agentId; });
+    return couponMap;
+});
+const mapWcOrderToLocal = (data, couponMap) => {
+    var _a, _b;
+    let couponCodeUsed = undefined;
+    let agentId = undefined;
+    if (data.coupon_lines && data.coupon_lines.length > 0) {
+        const cc = data.coupon_lines[0].code.toLowerCase();
+        couponCodeUsed = cc;
+        agentId = couponMap[cc] || null;
+    }
+    return {
+        wcOrderId: data.id,
+        total: parseFloat(data.total),
+        discountTotal: parseFloat(data.discount_total),
+        couponCodeUsed,
+        agentId,
+        status: data.status,
+        dateCreated: new Date(data.date_created),
+        currency: data.currency,
+        customerName: `${((_a = data.billing) === null || _a === void 0 ? void 0 : _a.first_name) || ''} ${((_b = data.billing) === null || _b === void 0 ? void 0 : _b.last_name) || ''}`.trim() || 'Guest'
+    };
+};
+/** Đồng bộ một đơn từ WC vào DB (dùng cho webhook và sau khi update) */
+const syncSingleOrder = (wcOrderId) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b;
+    const couponMap = yield dbCouponsToMap();
+    try {
+        const data = yield wcService.getOrder(wcOrderId);
+        const orderData = mapWcOrderToLocal(data, couponMap);
+        yield Order_1.default.findOneAndUpdate({ wcOrderId }, orderData, { upsert: true });
+        return true;
+    }
+    catch (e) {
+        console.error('syncSingleOrder error', wcOrderId, ((_b = (_a = e.response) === null || _a === void 0 ? void 0 : _a.data) === null || _b === void 0 ? void 0 : _b.message) || e.message);
+        return false;
+    }
+});
+exports.syncSingleOrder = syncSingleOrder;
 const doSyncOrders = () => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d;
+    var _a, _b;
     let page = 1;
     let keepGoing = true;
     let imported = 0;
-    const dbCoupons = yield Coupon_1.default.find();
-    const couponMap = {};
-    dbCoupons.forEach(c => {
-        couponMap[c.code.toLowerCase()] = c.agentId;
-    });
+    const couponMap = yield dbCouponsToMap();
     while (keepGoing) {
         try {
             const wcOrders = yield wcService.getOrders(page);
@@ -71,36 +110,19 @@ const doSyncOrders = () => __awaiter(void 0, void 0, void 0, function* () {
                 break;
             }
             for (const data of wcOrders) {
-                let couponCodeUsed = undefined;
-                let agentId = undefined;
-                if (data.coupon_lines && data.coupon_lines.length > 0) {
-                    const cc = data.coupon_lines[0].code.toLowerCase();
-                    couponCodeUsed = cc;
-                    agentId = couponMap[cc] || null;
-                }
-                const orderData = {
-                    wcOrderId: data.id,
-                    total: parseFloat(data.total),
-                    discountTotal: parseFloat(data.discount_total),
-                    couponCodeUsed,
-                    agentId,
-                    status: data.status,
-                    dateCreated: new Date(data.date_created),
-                    currency: data.currency,
-                    customerName: `${((_a = data.billing) === null || _a === void 0 ? void 0 : _a.first_name) || ''} ${((_b = data.billing) === null || _b === void 0 ? void 0 : _b.last_name) || ''}`.trim() || 'Guest'
-                };
+                const orderData = mapWcOrderToLocal(data, couponMap);
                 yield Order_1.default.findOneAndUpdate({ wcOrderId: data.id }, orderData, { upsert: true });
                 imported++;
             }
             page++;
         }
         catch (error) {
-            const errorMsg = ((_d = (_c = error.response) === null || _c === void 0 ? void 0 : _c.data) === null || _d === void 0 ? void 0 : _d.message) || error.message;
+            const errorMsg = ((_b = (_a = error.response) === null || _a === void 0 ? void 0 : _a.data) === null || _b === void 0 ? void 0 : _b.message) || error.message;
             console.error(`doSyncOrders page ${page} Error:`, errorMsg);
             if (imported === 0) {
                 throw new Error(errorMsg);
             }
-            break; // stop on network error or end of items after some imports
+            break;
         }
     }
     return imported;
@@ -109,14 +131,81 @@ exports.doSyncOrders = doSyncOrders;
 const syncOrders = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const imported = yield (0, exports.doSyncOrders)();
-        res.json({ message: `Successfully synced ${imported} orders`, imported });
+        res.json({ message: `已同步 ${imported} 筆訂單`, imported });
     }
     catch (error) {
         console.error('Sync request Error', error);
-        res.status(500).json({ message: 'Lỗi hệ thống trong quá trình đồng bộ.' });
+        res.status(500).json({ message: '同步過程中發生系統錯誤。' });
     }
 });
 exports.syncOrders = syncOrders;
+/** Chi tiết đơn hàng (lấy từ WC + merge agent từ DB) */
+const getOrderDetail = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c;
+    try {
+        const idParam = Array.isArray(req.params.wcOrderId) ? req.params.wcOrderId[0] : req.params.wcOrderId;
+        const wcOrderId = parseInt(idParam !== null && idParam !== void 0 ? idParam : '', 10);
+        if (isNaN(wcOrderId))
+            return res.status(400).json({ message: '訂單 ID 無效' });
+        const wcOrder = yield wcService.getOrder(wcOrderId);
+        const local = yield Order_1.default.findOne({ wcOrderId }).populate('agentId', 'name phone');
+        res.json(Object.assign(Object.assign({}, wcOrder), { agentId: local === null || local === void 0 ? void 0 : local.agentId, couponCodeUsed: local === null || local === void 0 ? void 0 : local.couponCodeUsed }));
+    }
+    catch (error) {
+        const msg = ((_b = (_a = error.response) === null || _a === void 0 ? void 0 : _a.data) === null || _b === void 0 ? void 0 : _b.message) || error.message;
+        if (((_c = error.response) === null || _c === void 0 ? void 0 : _c.status) === 404)
+            return res.status(404).json({ message: 'WordPress 中找不到此訂單' });
+        res.status(500).json({ message: msg });
+    }
+});
+exports.getOrderDetail = getOrderDetail;
+/** Cập nhật đơn hàng trên WordPress rồi đồng bộ lại DB (dùng luôn response từ WC để ghi DB, tránh lệch dữ liệu) */
+const updateOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c;
+    try {
+        const idParam = Array.isArray(req.params.wcOrderId) ? req.params.wcOrderId[0] : req.params.wcOrderId;
+        const wcOrderId = parseInt(idParam !== null && idParam !== void 0 ? idParam : '', 10);
+        if (isNaN(wcOrderId))
+            return res.status(400).json({ message: '訂單 ID 無效' });
+        const { status, billing } = req.body;
+        const payload = {};
+        if (status !== undefined)
+            payload.status = status;
+        if (billing !== undefined)
+            payload.billing = billing;
+        const wcUpdated = yield wcService.updateOrder(wcOrderId, payload);
+        const couponMap = yield dbCouponsToMap();
+        const orderData = mapWcOrderToLocal(wcUpdated, couponMap);
+        yield Order_1.default.findOneAndUpdate({ wcOrderId }, orderData, { upsert: true, new: true });
+        const local = yield Order_1.default.findOne({ wcOrderId }).populate('agentId', 'name phone');
+        res.json(local);
+    }
+    catch (error) {
+        const msg = ((_b = (_a = error.response) === null || _a === void 0 ? void 0 : _a.data) === null || _b === void 0 ? void 0 : _b.message) || error.message;
+        if (((_c = error.response) === null || _c === void 0 ? void 0 : _c.status) === 404)
+            return res.status(404).json({ message: 'WordPress 中找不到此訂單' });
+        res.status(500).json({ message: msg });
+    }
+});
+exports.updateOrder = updateOrder;
+/** Webhook do WordPress gọi khi có đơn mới/cập nhật – đồng bộ đơn đó ngay */
+const webhookOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c;
+    try {
+        const id = (_b = (_a = req.body) === null || _a === void 0 ? void 0 : _a.id) !== null && _b !== void 0 ? _b : (_c = req.body) === null || _c === void 0 ? void 0 : _c.order_id;
+        const wcOrderId = typeof id === 'number' ? id : parseInt(String(id), 10);
+        if (isNaN(wcOrderId)) {
+            return res.status(400).json({ message: '請求內容缺少或無效的訂單 ID' });
+        }
+        const ok = yield (0, exports.syncSingleOrder)(wcOrderId);
+        res.status(ok ? 200 : 500).json({ synced: ok });
+    }
+    catch (error) {
+        console.error('webhookOrder', error);
+        res.status(500).json({ message: error.message });
+    }
+});
+exports.webhookOrder = webhookOrder;
 const doSyncCoupons = () => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b;
     const coupons = yield Coupon_1.default.find();
@@ -152,7 +241,7 @@ exports.doSyncCoupons = doSyncCoupons;
 const syncCoupons = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const synced = yield (0, exports.doSyncCoupons)();
-        res.json({ message: `Successfully synced ${synced} coupons to WordPress`, synced });
+        res.json({ message: `已同步 ${synced} 個折扣碼至 WordPress`, synced });
     }
     catch (error) {
         res.status(500).json({ message: error.message });

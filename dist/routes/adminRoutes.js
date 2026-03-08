@@ -15,4 +15,5 @@ router.route('/coupons').get(adminController_1.getCoupons).post(adminController_
 router.route('/coupons/:id').put(adminController_1.updateCouponAdmin).delete(adminController_1.deleteCouponAdmin);
 router.get('/orders', adminController_1.getOrders);
 router.get('/stats', adminController_1.getStats);
+router.get('/stats/revenue-by-agent', adminController_1.getStatsRevenueByAgent);
 exports.default = router;

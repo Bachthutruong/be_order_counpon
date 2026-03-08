@@ -39,11 +39,11 @@ export const createMyCoupon = async (req: AuthRequest, res: Response) => {
     if (config.applyRules) {
       if (discountType === 'percent') {
         if (discountValue < config.minDiscountPercent || discountValue > config.maxDiscountPercent) {
-          return res.status(400).json({ message: `Giảm giá % phải từ ${config.minDiscountPercent}% đến ${config.maxDiscountPercent}%` });
+          return res.status(400).json({ message: `折扣 % 須介於 ${config.minDiscountPercent}% 至 ${config.maxDiscountPercent}%` });
         }
       } else {
         if (discountValue < config.minDiscountFixed || discountValue > config.maxDiscountFixed) {
-          return res.status(400).json({ message: `Giảm giá VNĐ phải từ ${config.minDiscountFixed} đến ${config.maxDiscountFixed}` });
+          return res.status(400).json({ message: `折扣金額須介於 ${config.minDiscountFixed} 至 ${config.maxDiscountFixed}` });
         }
       }
     }
@@ -55,7 +55,7 @@ export const createMyCoupon = async (req: AuthRequest, res: Response) => {
       wcId = wcCoupon.id;
     } catch (e: any) {
       console.log('Error creating WP coupon by Agent', e.response?.data || e.message);
-      return res.status(400).json({ message: 'Lỗi tạo mã với hệ thống WordPress' });
+      return res.status(400).json({ message: '與 WordPress 建立折扣碼時發生錯誤' });
     }
 
     const coupon = await Coupon.create({
@@ -76,18 +76,18 @@ export const updateMyCoupon = async (req: AuthRequest, res: Response) => {
   try {
     const { discountType, discountValue } = req.body;
     const coupon = await Coupon.findOne({ _id: req.params.id, agentId: req.user?._id });
-    if (!coupon) return res.status(404).json({ message: 'Coupon not found' });
+    if (!coupon) return res.status(404).json({ message: '找不到折扣碼' });
 
     // Validate rules
     const config = await Config.findOne() || { applyRules: true, minDiscountPercent: 10, maxDiscountPercent: 50, minDiscountFixed: 20000, maxDiscountFixed: 500000 };
     if (config.applyRules) {
         if (discountType === 'percent') {
           if (discountValue < config.minDiscountPercent || discountValue > config.maxDiscountPercent) {
-            return res.status(400).json({ message: `Giảm giá % phải từ ${config.minDiscountPercent}% đến ${config.maxDiscountPercent}%` });
+            return res.status(400).json({ message: `折扣 % 須介於 ${config.minDiscountPercent}% 至 ${config.maxDiscountPercent}%` });
           }
         } else {
           if (discountValue < config.minDiscountFixed || discountValue > config.maxDiscountFixed) {
-            return res.status(400).json({ message: `Giảm giá VNĐ phải từ ${config.minDiscountFixed} đến ${config.maxDiscountFixed}` });
+            return res.status(400).json({ message: `折扣金額須介於 ${config.minDiscountFixed} 至 ${config.maxDiscountFixed}` });
           }
         }
     }
@@ -112,7 +112,7 @@ export const updateMyCoupon = async (req: AuthRequest, res: Response) => {
 export const deleteMyCoupon = async (req: AuthRequest, res: Response) => {
   try {
     const coupon = await Coupon.findOne({ _id: req.params.id, agentId: req.user?._id });
-    if (!coupon) return res.status(404).json({ message: 'Not found' });
+    if (!coupon) return res.status(404).json({ message: '找不到' });
 
     if (coupon.wcCouponId) {
        try {
@@ -123,7 +123,7 @@ export const deleteMyCoupon = async (req: AuthRequest, res: Response) => {
     }
     
     await coupon.deleteOne();
-    res.json({ message: 'Deleted' });
+    res.json({ message: '已刪除' });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }

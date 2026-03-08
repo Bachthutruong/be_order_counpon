@@ -9,4 +9,7 @@ const authMiddleware_1 = require("../middleware/authMiddleware");
 const router = express_1.default.Router();
 router.post('/sync-orders', authMiddleware_1.protect, authMiddleware_1.adminOnly, wcController_1.syncOrders);
 router.post('/sync-coupons', authMiddleware_1.protect, authMiddleware_1.adminOnly, wcController_1.syncCoupons);
+router.get('/orders/:wcOrderId', authMiddleware_1.protect, authMiddleware_1.adminOnly, wcController_1.getOrderDetail);
+router.put('/orders/:wcOrderId', authMiddleware_1.protect, authMiddleware_1.adminOnly, wcController_1.updateOrder);
+router.post('/webhook/order', wcController_1.webhookOrder);
 exports.default = router;

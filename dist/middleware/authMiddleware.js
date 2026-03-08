@@ -24,7 +24,7 @@ const protect = (req, res, next) => __awaiter(void 0, void 0, void 0, function* 
         token = req.headers.authorization.split(' ')[1];
     }
     if (!token) {
-        return res.status(401).json({ message: 'Not authorized, no token' });
+        return res.status(401).json({ message: '未授權，缺少 token' });
     }
     try {
         const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET || 'secret');
@@ -32,7 +32,7 @@ const protect = (req, res, next) => __awaiter(void 0, void 0, void 0, function* 
         next();
     }
     catch (error) {
-        res.status(401).json({ message: 'Not authorized, token failed' });
+        res.status(401).json({ message: '未授權，token 無效' });
     }
 });
 exports.protect = protect;
@@ -41,7 +41,7 @@ const adminOnly = (req, res, next) => {
         next();
     }
     else {
-        res.status(403).json({ message: 'Not authorized as admin' });
+        res.status(403).json({ message: '需要管理員權限' });
     }
 };
 exports.adminOnly = adminOnly;

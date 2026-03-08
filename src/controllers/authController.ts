@@ -16,12 +16,12 @@ export const login = async (req: Request, res: Response) => {
     const user = await User.findOne({ phone, active: true });
 
     if (!user) {
-      return res.status(401).json({ message: 'Invalid credentials or inactive user' });
+      return res.status(401).json({ message: '帳號或密碼錯誤，或帳號已停用' });
     }
 
     const isMatch = await bcrypt.compare(password, user.password as string);
     if (!isMatch) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ message: '帳號或密碼錯誤' });
     }
 
     const token = generateToken(user._id.toString());
@@ -53,19 +53,19 @@ export const changePassword = async (req: AuthRequest, res: Response) => {
     const user = await User.findById(req.user?._id);
 
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ message: '找不到使用者' });
     }
 
     const isMatch = await bcrypt.compare(oldPassword, user.password as string);
     if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid old password' });
+      return res.status(400).json({ message: '目前密碼錯誤' });
     }
 
     user.password = await bcrypt.hash(newPassword, 10);
     user.isFirstLogin = false; // Mark as not first login
     await user.save();
 
-    res.json({ message: 'Password updated successfully' });
+    res.json({ message: '密碼已更新' });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -87,5 +87,5 @@ export const logout = async (req: Request, res: Response) => {
         sameSite: 'none',
         expires: new Date(0),
     });
-    res.json({ message: 'Logged out' });
+    res.json({ message: '已登出' });
 }

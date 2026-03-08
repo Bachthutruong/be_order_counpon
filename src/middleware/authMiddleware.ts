@@ -16,7 +16,7 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
   }
 
   if (!token) {
-    return res.status(401).json({ message: 'Not authorized, no token' });
+    return res.status(401).json({ message: '未授權，缺少 token' });
   }
 
   try {
@@ -24,7 +24,7 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
     req.user = await User.findById(decoded.id).select('-password') as IUser;
     next();
   } catch (error: any) {
-    res.status(401).json({ message: 'Not authorized, token failed' });
+    res.status(401).json({ message: '未授權，token 無效' });
   }
 };
 
@@ -32,6 +32,6 @@ export const adminOnly = (req: AuthRequest, res: Response, next: NextFunction) =
   if (req.user && req.user.role === 'ADMIN') {
     next();
   } else {
-    res.status(403).json({ message: 'Not authorized as admin' });
+    res.status(403).json({ message: '需要管理員權限' });
   }
 };

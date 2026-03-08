@@ -40,5 +40,6 @@ const ConfigSchema = new mongoose_1.Schema({
     minDiscountFixed: { type: Number, default: 0 },
     maxDiscountFixed: { type: Number, default: 999999999 },
     applyRules: { type: Boolean, default: true },
+    defaultAgentPassword: { type: String },
 }, { timestamps: true });
 exports.default = mongoose_1.default.model('Config', ConfigSchema);
