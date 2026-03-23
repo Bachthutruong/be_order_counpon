@@ -10,6 +10,8 @@ const router = express_1.default.Router();
 router.use(authMiddleware_1.protect, authMiddleware_1.adminOnly);
 router.route('/agents').get(adminController_1.getAgents).post(adminController_1.createAgent);
 router.route('/agents/:id').put(adminController_1.updateAgent).delete(adminController_1.deleteAgent);
+router.route('/admins').get(adminController_1.getAdmins).post(adminController_1.createAdmin);
+router.route('/admins/:id').put(adminController_1.updateAdmin).delete(adminController_1.deleteAdmin);
 router.route('/config').get(adminController_1.getConfig).put(adminController_1.updateConfig);
 router.route('/coupons').get(adminController_1.getCoupons).post(adminController_1.createCouponAdmin);
 router.route('/coupons/:id').put(adminController_1.updateCouponAdmin).delete(adminController_1.deleteCouponAdmin);

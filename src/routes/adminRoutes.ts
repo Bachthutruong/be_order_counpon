@@ -1,5 +1,23 @@
 import express from 'express';
-import { getAgents, createAgent, updateAgent, deleteAgent, getConfig, updateConfig, getCoupons, createCouponAdmin, updateCouponAdmin, deleteCouponAdmin, getOrders, getStats, getStatsRevenueByAgent } from '../controllers/adminController';
+import {
+  getAgents,
+  createAgent,
+  updateAgent,
+  deleteAgent,
+  getAdmins,
+  createAdmin,
+  updateAdmin,
+  deleteAdmin,
+  getConfig,
+  updateConfig,
+  getCoupons,
+  createCouponAdmin,
+  updateCouponAdmin,
+  deleteCouponAdmin,
+  getOrders,
+  getStats,
+  getStatsRevenueByAgent
+} from '../controllers/adminController';
 import { protect, adminOnly } from '../middleware/authMiddleware';
 
 const router = express.Router();
@@ -8,6 +26,8 @@ router.use(protect, adminOnly);
 
 router.route('/agents').get(getAgents).post(createAgent);
 router.route('/agents/:id').put(updateAgent).delete(deleteAgent);
+router.route('/admins').get(getAdmins).post(createAdmin);
+router.route('/admins/:id').put(updateAdmin).delete(deleteAdmin);
 
 router.route('/config').get(getConfig).put(updateConfig);
 

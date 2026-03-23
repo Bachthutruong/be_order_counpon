@@ -32,6 +32,125 @@ export const getAgents = async (req: Request, res: Response) => {
   }
 };
 
+// Admins
+export const getAdmins = async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const search = req.query.search as string;
+
+    const query: any = { role: 'ADMIN' };
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { phone: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const admins = await User.find(query).skip((page - 1) * limit).limit(limit).select('-password');
+    const total = await User.countDocuments(query);
+
+    res.json({ data: admins, total, page, limit });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const createAdmin = async (req: Request, res: Response) => {
+  try {
+    const { name, phone, password } = req.body;
+
+    if (!name || !phone || !password) {
+      return res.status(400).json({ message: '請填寫完整資訊' });
+    }
+
+    const exists = await User.findOne({ phone });
+    if (exists) {
+      return res.status(400).json({ message: '此電話號碼已存在' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const admin = await User.create({
+      name,
+      phone,
+      password: hashedPassword,
+      role: 'ADMIN',
+      isFirstLogin: false,
+      active: true,
+    });
+
+    res.status(201).json({
+      id: admin._id,
+      name: admin.name,
+      phone: admin.phone,
+      role: admin.role,
+      isFirstLogin: admin.isFirstLogin,
+      active: admin.active
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const updateAdmin = async (req: AuthRequest, res: Response) => {
+  try {
+    const { name, phone, active } = req.body;
+    const adminId = String(req.params.id);
+
+    if (!name || !phone) {
+      return res.status(400).json({ message: '姓名與電話必填' });
+    }
+
+    const duplicate = await User.findOne({ phone, _id: { $ne: adminId } });
+    if (duplicate) {
+      return res.status(400).json({ message: '此電話號碼已存在' });
+    }
+
+    if (req.user?._id?.toString() === adminId && active === false) {
+      return res.status(400).json({ message: '不可停用自己的管理員帳號' });
+    }
+
+    const admin = await User.findOneAndUpdate(
+      { _id: adminId, role: 'ADMIN' },
+      { name, phone, active },
+      { new: true }
+    ).select('-password');
+
+    if (!admin) {
+      return res.status(404).json({ message: '找不到管理員' });
+    }
+
+    res.json(admin);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const deleteAdmin = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = String(req.params.id);
+
+    if (req.user?._id?.toString() === adminId) {
+      return res.status(400).json({ message: '不可刪除目前登入帳號' });
+    }
+
+    const totalAdmins = await User.countDocuments({ role: 'ADMIN' });
+    if (totalAdmins <= 1) {
+      return res.status(400).json({ message: '系統至少需要一個管理員' });
+    }
+
+    const deleted = await User.findOneAndDelete({ _id: adminId, role: 'ADMIN' });
+    if (!deleted) {
+      return res.status(404).json({ message: '找不到管理員' });
+    }
+
+    res.json({ message: '管理員已刪除' });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 export const createAgent = async (req: Request, res: Response) => {
   try {
     const { name, phone } = req.body;
