@@ -36,10 +36,24 @@ export const syncSingleOrder = async (wcOrderId: number): Promise<boolean> => {
   const couponMap = await dbCouponsToMap();
   try {
     const data = await wcService.getOrder(wcOrderId);
+    
+    // Nếu đơn hàng đã bị xóa (vào thùng rác), xóa luôn ở DB local
+    if (data.status === 'trash') {
+      console.log(`Order ${wcOrderId} is trashed, removing locally.`);
+      await Order.findOneAndDelete({ wcOrderId });
+      return true;
+    }
+
     const orderData = mapWcOrderToLocal(data, couponMap);
     await Order.findOneAndUpdate({ wcOrderId }, orderData, { upsert: true });
     return true;
   } catch (e: any) {
+    // Nếu WC báo 404, có nghĩa đơn hàng đã bị xóa vĩnh viễn
+    if (e.response?.status === 404) {
+      console.log(`Order ${wcOrderId} not found in WC, removing locally.`);
+      await Order.findOneAndDelete({ wcOrderId });
+      return true;
+    }
     console.error('syncSingleOrder error', wcOrderId, e.response?.data?.message || e.message);
     return false;
   }
@@ -66,6 +80,10 @@ export const doSyncOrders = async () => {
         }
         
         for (const data of wcOrders) {
+          if (data.status === 'trash') {
+            await Order.findOneAndDelete({ wcOrderId: data.id });
+            continue;
+          }
           const orderData = mapWcOrderToLocal(data, couponMap);
           await Order.findOneAndUpdate({ wcOrderId: data.id }, orderData, { upsert: true });
           imported++;
@@ -137,18 +155,31 @@ export const updateOrder = async (req: Request, res: Response) => {
   }
 };
 
-/** Webhook do WordPress gọi khi có đơn mới/cập nhật – đồng bộ đơn đó ngay */
+/** Webhook do WordPress gọi khi có đơn mới/cập nhật/xóa – đồng bộ đơn đó ngay */
 export const webhookOrder = async (req: Request, res: Response) => {
   try {
+    const topic = req.headers['x-wc-webhook-topic'] || '';
     const id = req.body?.id ?? req.body?.order_id;
     const wcOrderId = typeof id === 'number' ? id : parseInt(String(id), 10);
+
     if (isNaN(wcOrderId)) {
+      console.error('Webhook: Invalid Order ID', req.body);
       return res.status(400).json({ message: '請求內容缺少或無效的訂單 ID' });
     }
+
+    console.log(`Webhook received: Topic=${topic}, OrderID=${wcOrderId}`);
+
+    // Xử lý các trường hợp xóa đơn hàng
+    if (topic === 'order.deleted' || topic === 'order.trashed') {
+      await Order.findOneAndDelete({ wcOrderId });
+      console.log(`Order ${wcOrderId} deleted via webhook topic: ${topic}`);
+      return res.status(200).json({ synced: true, action: 'deleted' });
+    }
+
     const ok = await syncSingleOrder(wcOrderId);
     res.status(ok ? 200 : 500).json({ synced: ok });
   } catch (error: any) {
-    console.error('webhookOrder', error);
+    console.error('webhookOrder error', error);
     res.status(500).json({ message: error.message });
   }
 };
