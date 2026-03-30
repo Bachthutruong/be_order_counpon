@@ -137,11 +137,19 @@ export const getMyOrders = async (req: AuthRequest, res: Response) => {
 
     let query: any = { agentId: req.user?._id };
     if (search) {
-      query.$or = [
-        { customerName: { $regex: search, $options: 'i' } },
-        { couponCodeUsed: { $regex: search, $options: 'i' } }
+      query.$and = [
+        { agentId: req.user?._id },
+        { 
+          $or: [
+            { customerName: { $regex: search, $options: 'i' } },
+            { couponCodeUsed: { $regex: search, $options: 'i' } }
+          ]
+        }
       ];
     }
+    
+    // Luôn luôn lọc bỏ các đơn hàng rác và nháp
+    query.status = { $nin: ['trash', 'checkout-draft', 'auto-draft', 'draft'] };
 
     const orders = await Order.find(query).sort({ dateCreated: -1 })
         .skip((page - 1) * limit).limit(limit);

@@ -37,9 +37,9 @@ export const syncSingleOrder = async (wcOrderId: number): Promise<boolean> => {
   try {
     const data = await wcService.getOrder(wcOrderId);
     
-    // Nếu đơn hàng đã bị xóa (vào thùng rác), xóa luôn ở DB local
-    if (data.status === 'trash') {
-      console.log(`Order ${wcOrderId} is trashed, removing locally.`);
+    // Nếu đơn hàng đã bị xóa (vào thùng rác) hoặc là bản nháp (draft), xóa luôn ở DB local
+    if (['trash', 'checkout-draft', 'auto-draft', 'draft'].includes(data.status)) {
+      console.log(`Order ${wcOrderId} status is ${data.status}, removing locally.`);
       await Order.findOneAndDelete({ wcOrderId });
       return true;
     }
@@ -66,6 +66,10 @@ export const doSyncOrders = async () => {
 
     const couponMap = await dbCouponsToMap();
 
+    // Dọn dẹp DB local: Xóa tất cả các đơn hàng có trạng thái không mong muốn (draft, trash)
+    // Việc này giúp loại bỏ các đơn cũ đã tồn tại trước khi cập nhật logic mới
+    await Order.deleteMany({ status: { $in: ['trash', 'checkout-draft', 'auto-draft', 'draft'] } });
+
     while (keepGoing) {
       try {
         const wcOrders = await wcService.getOrders(page);
@@ -80,7 +84,7 @@ export const doSyncOrders = async () => {
         }
         
         for (const data of wcOrders) {
-          if (data.status === 'trash') {
+          if (['trash', 'checkout-draft', 'auto-draft', 'draft'].includes(data.status)) {
             await Order.findOneAndDelete({ wcOrderId: data.id });
             continue;
           }

@@ -348,11 +348,19 @@ export const getOrders = async (req: Request, res: Response) => {
     }
     
     if (search) {
-      query.$or = [
-        { customerName: { $regex: search, $options: 'i' } },
-        { couponCodeUsed: { $regex: search, $options: 'i' } }
+      query.$and = [
+        ...(query.$and || []),
+        {
+          $or: [
+            { customerName: { $regex: search, $options: 'i' } },
+            { couponCodeUsed: { $regex: search, $options: 'i' } }
+          ]
+        }
       ];
     }
+    
+    // Luôn luôn lọc bỏ các đơn hàng rác và nháp
+    query.status = { $nin: ['trash', 'checkout-draft', 'auto-draft', 'draft'] };
     
     // Filter out canceled or completed if needed, but for now we list all.
     const orders = await Order.find(query).sort({ dateCreated: -1 })
