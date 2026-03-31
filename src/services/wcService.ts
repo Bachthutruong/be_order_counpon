@@ -44,7 +44,7 @@ export const deleteCoupon = async (id: number) => {
 // We can implement sync function to pull orders too
 export const getOrders = async (page: number = 1) => {
   const client = getClient();
-  const response = await client.get(`/orders?per_page=50&page=${page}`);
+  const response = await client.get(`/orders?per_page=100&page=${page}`);
   return response.data;
 };
 

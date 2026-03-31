@@ -63,45 +63,81 @@ export const doSyncOrders = async () => {
     let page = 1;
     let keepGoing = true;
     let imported = 0;
+    const syncedWcIds: number[] = [];
 
     const couponMap = await dbCouponsToMap();
 
-    // Dọn dẹp DB local: Xóa tất cả các đơn hàng có trạng thái không mong muốn (draft, trash)
-    // Việc này giúp loại bỏ các đơn cũ đã tồn tại trước khi cập nhật logic mới
+    // Dọn dẹp các trạng thái rác đã biết trước
     await Order.deleteMany({ status: { $in: ['trash', 'checkout-draft', 'auto-draft', 'draft'] } });
 
     while (keepGoing) {
       try {
-        const wcOrders = await wcService.getOrders(page);
+        // Lấy 100 đơn mỗi trang để nhanh hơn
+        const wcOrders = await wcService.getOrders(page); 
 
-        if (!Array.isArray(wcOrders)) {
-          console.error('WC API returned non-array:', wcOrders);
-          throw new Error(typeof wcOrders === 'object' && wcOrders.message ? wcOrders.message : 'WC API returned unexpected format');
-        }
-        if (wcOrders.length === 0) {
+        if (!Array.isArray(wcOrders) || wcOrders.length === 0) {
           keepGoing = false;
           break;
         }
         
         for (const data of wcOrders) {
-          if (['trash', 'checkout-draft', 'auto-draft', 'draft'].includes(data.status)) {
-            await Order.findOneAndDelete({ wcOrderId: data.id });
-            continue;
-          }
-          const orderData = mapWcOrderToLocal(data, couponMap);
-          await Order.findOneAndUpdate({ wcOrderId: data.id }, orderData, { upsert: true });
-          imported++;
+           syncedWcIds.push(data.id);
+           
+           if (['trash', 'checkout-draft', 'auto-draft', 'draft'].includes(data.status)) {
+             await Order.findOneAndDelete({ wcOrderId: data.id });
+             continue;
+           }
+           
+           const orderData = mapWcOrderToLocal(data, couponMap);
+           await Order.findOneAndUpdate({ wcOrderId: data.id }, orderData, { upsert: true });
+           imported++;
         }
-        page++;
+        
+        // Nếu số lượng đơn hàng lấy về ít hơn 100 (per_page), có nghĩa đã hết đơn
+        if (wcOrders.length < 100) {
+            keepGoing = false;
+        } else {
+            page++;
+        }
+        
+        // Giới hạn quét tối đa 20 trang (1000 đơn hàng gần nhất) để tránh treo server nếu shop quá lớn
+        if (page > 20) keepGoing = false;
+
       } catch (error: any) {
          const errorMsg = error.response?.data?.message || error.message;
          console.error(`doSyncOrders page ${page} Error:`, errorMsg);
-         if (imported === 0) {
-            throw new Error(errorMsg);
-         }
+         if (imported === 0) throw new Error(errorMsg);
          break;
       }
     }
+
+    // PHẦN QUAN TRỌNG: Xóa những đơn ở local mà không còn tồn tại ở WooCommerce
+    if (syncedWcIds.length > 0) {
+        // Nếu đã quét hết (keepGoing = false và không chạm giới hạn 1000 đơn)
+        // hoặc đơn giản là đã có danh sách IDs từ WooCommerce, 
+        // hãy xóa những đơn local KHÔNG nằm trong danh sách này để đảm bảo Mirror 100%
+        
+        const deleteQuery: any = { wcOrderId: { $nin: syncedWcIds } };
+        
+        // Nếu chưa quét hết 20 trang (có thể còn đơn cũ hơn), 
+        // ta chỉ nên xóa những đơn nằm trong khoảng ID từ nhỏ nhất đến lớn nhất vừa thấy
+        // và cả những đơn MỚI HƠN ID lớn nhất (để xử lý trường hợp đơn mới bị xóa hẳn)
+        if (page <= 20) {
+            const minSyncedId = Math.min(...syncedWcIds);
+            deleteQuery.wcOrderId = { $gte: minSyncedId, $nin: syncedWcIds };
+        }
+
+        const pruneResult = await Order.deleteMany(deleteQuery);
+        
+        if (pruneResult.deletedCount > 0) {
+            console.log(`Mirror Sync: Deleted ${pruneResult.deletedCount} stale orders to match WooCommerce.`);
+        }
+    } else if (page === 1 && imported === 0) {
+        // Nếu trang 1 trả về trống rống, có nghĩa WC không có đơn nào. Xóa hết local.
+        console.log("WooCommerce is empty. Clearing all local orders.");
+        await Order.deleteMany({});
+    }
+
     return imported;
 };
 

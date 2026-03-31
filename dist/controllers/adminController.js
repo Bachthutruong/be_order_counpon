@@ -466,7 +466,7 @@ const getStatsRevenueByAgent = (req, res) => __awaiter(void 0, void 0, void 0, f
             {
                 $project: {
                     agentId: '$_id',
-                    agentName: { $ifNull: ['$agent.name', 'Không gán đại lý'] },
+                    agentName: { $ifNull: ['$agent.name', '無經銷商'] },
                     agentPhone: '$agent.phone',
                     totalRevenue: 1,
                     totalOrders: 1,
